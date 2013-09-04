@@ -145,10 +145,10 @@ EM.run do
   ##
   # Maintain Wallet Balances when XRP reserves are low in Hot Wallets
   ##
-  hot_bitstamp_wallet.when_balance_below(500, :xrp) do
+  hot_bitstamp_wallet.when_balance_falls_below(500, :xrp) do
     xrp_reserve_wallet.transfer(to: hot_bitstamp_wallet, amount: 500, currency: :xrp)
   end
-  hot_we_exchange_wallet.when_balance_below(500, :xrp) do
+  hot_we_exchange_wallet.when_balance_falls_below(500, :xrp) do
     xrp_reserve_wallet.transfer(to: hot_we_exchange_wallet, amount: 500, currency: :xrp)
   end
 
