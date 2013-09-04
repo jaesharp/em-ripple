@@ -11,7 +11,7 @@ generate documentation) for callbacks.
 
 Examples
 --------
-``
+```
 require 'eventmachine'
 require 'em-ripple'
 
@@ -317,7 +317,7 @@ EM.run do
   ...
 
 end
-``
+```
 
 
 Security
