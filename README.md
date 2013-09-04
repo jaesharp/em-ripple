@@ -9,317 +9,160 @@ After installing the gem 'em-ripple', require 'em-ripple' in your EventMachine p
 See the generated documentation (if you're using the source repository, run `rake doc` to
 generate documentation) for callbacks.
 
+Security
+--------
+All messages to and from your peer are validated.
+
 Examples
 --------
+Make/Take Liquidity Arbitrage Bot:
 ```
 require 'eventmachine'
 require 'em-ripple'
 
 EM.run do
 
-  # States and Flags
-  permit_trading = false
-  start_ledger_index = 0
+  # the dry_run option means that the client creates no new transactions
+  ripple_client = Ripple::Client.new(host: 's1.ripple.net', port: 443, dry_run: true)
 
-  pending_orders = []
+  ##
+  # Setup wallets
+  ##
 
-  # Caches
+  # use separate wallets because the ripple network will ripple our IOUs if we trust both issuers in a single
+  # wallet
 
-  order_books = Hash.new
-  best_bid = Hash.new
-  best_ask = Hash.new
-  spread = Hash.new
+  xrp_reserve_wallet = Ripple::Wallet.new(
+    name: 'quokka',
+    password: 'corgegrault9000(yah, nah. This isn't a real password mates.)'
+    blobvault: 'https://blobvault.payward.com'
+  )
 
-  # Ripple Client Setup
+  hot_bitstamp_wallet = Ripple::Wallet.new(
+    name: 'boondaburra',
+    password: 'foobar9000(yah, nah. This isn't a real password mates.)',
+    blobvault: 'https://blobvault.payward.com'
+  )
 
-  ripple = EMRipple::Ripple::Client.new(host: 's1.ripple.net', port: 443)
-  boondaburra_wallet = ripple.open_wallet(name: 'boondaburra', password: 'foobar9000(yeah, nah. not the actual password mates)', blobvault: 'https://blobvault.payward.com')
+  hot_we_exchange_wallet = Ripple::Wallet.new(
+    name: 'kangaroo',
+    password: 'bazquux9000(yah, nah. This isn't a real password mates.)',
+    blobvault: 'https://blobvault.payward.com'
+  )
 
-  # this happens serially before other registered events fire
-  # gives us the ability to set up caches and such
-  ripple.on_rippled_connection do
-    fill_order_book_caches
-    resume_trading!
-  end
+  ##
+  # Setup Issuer Account References
+  ##
 
-  ripple.on_rippled_disconnect do
-    halt_trading!
-  end
+  bitstamp = Ripple:Account.new(address: 'rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B')
 
-  ripple.on_rippled_reconnection do
-    fill_order_book_caches
-    resume_trading!
-  end
+  # WARNING: WeExchange address is not verified (it also has a typo, because I know you probably won't read this)
+  we_exchange = Ripple::Account.new(address: 'r9vbV3EHvXWjSkeQ6CAcYVPGeq7TuiXY2dX')
 
-  # Rippled has disconnected from the ripple network
-  ripple.on_network_disconnect do
-    halt_trading!
-  end
+  ##
+  # Configure the Trade::Engine
+  ##
 
-  # Rippled has reconnected to the ripple peer network
-  ripple.on_network_reconnect do
-    fill_order_book_caches
-    resume_trading!
-  end
+  trade_engine = Ripple::Trade::Engine.new(
+    client: ripple_client, # this trade engine will execute all trades through the given client[s]
+    issuers: {
+      :bitstamp => bitstamp,
+      :we_exchange => we_exchange
+    },
+    active_trading_wallets: {
+      :bitstamp => hot_bitstamp_wallet,
+      :we_exchange => hot_we_exchange_wallet
+    },
+    xrp_reserve_wallet: xrp_reserve_wallet,
+    # TradeEngine uses cartesian product and ripples through XRP implicitly when declaring interest in a currency
+    # orderbook. For instance, here we look at USDbitstamp/USDwe_exchange, USDbitstamp/BTCbitstamp, USDwe_exchange/BTCbitstamp,
+    # USDbitstamp/BTCwe_exchange, USDwe_exchange/BTCwe_exchange, BTCbitstamp/BTCwe_exchange, USDBitstamp/XRP, USDwe_exchange/XRP,
+    # BTCbitstamp/XRP, BTCwe_exchange/XRP. Not all of these direct exchanges will exist, but we will try to get data for them anyway.
+    currencies_of_interest: [:usd, :btc, :xrp]
+  )
 
-  # Issuer Addresses
-  bitstamp_ripple_address = 'rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B' # works a treat
-  weexchange_ripple_address = 'r9vbV3EHvXWjSkeQ6CAcYVPGeq7TuiXY2dX' # NOT VERIFIED, EXAMPLE (also, with deliberate typo in case you don't read this)
+  ##
+  # Do things we must do before we begin our automated trading session
+  ##
 
-  # Ensure Trading Wallet Limits are properly set for arbitrage trading
+  trade_engine.before_trading_starts do
 
-  boondaburra_wallet.trust_line.create(issuer: bitstamp_ripple_address, currency: 'usd', quantity: 15_000)
-  boondaburra_wallet.trust_line.create(issuer: bitstamp_ripple_address, currency: 'btc', quantity: 1_000)
-  boondaburra_wallet.trust_line.create(issuer: weexchange_ripple_address, currency: 'usd', quantity: 15_000)
-  boondaburra_wallet.trust_line.create(issuer: weexchange_ripple_address, currency: 'btc', quantity: 1_000)
+    ##
+    # Ensure our wallets are set up to trade with our issuers
+    ##
 
-  # Arbitrage Bitstamp and WeExchange BTC/USD Order Books
-
-  # Take/Make Liquidity
-  bitstamp_btc_usd_order_book = ripple.order_book(from: 'BTC', to: 'USD', issuer: bitstamp_ripple_address)
-  weexchange_btc_usd_order_book = ripple.order_book(from: 'BTC', to: 'USD', issuer: weexchange_ripple_address)
-
-  # Cache management
-  def fill_order_book_caches
-    clear_order_book_caches
-
-    start_ledger_index = ripple.in_one_ledger do
-
-      # fill bitstamp btc/usd order book cache
-      order_books[:bitstamp][:btc_usd][:bids] = bitstamp_btc_usd_order_book.bids
-      order_books[:bitstamp][:btc_usd][:asks] = bitstamp_btc_usd_order_book.asks
-
-      # fill weexchange btc/usd order book cache
-      order_books[:weexchange][:btc_usd][:bids] = weexchange_btc_usd_order_book.bids
-      order_books[:weexchange][:btc_usd][:asks] = weexchange_btc_usd_order_book.asks
-
+    ensure_bitstamp_trusted_by_wallet bitstamp_wallet do
+      with_trust_line 10_000, :usd
+      with_trust_line 1_000, :btc
     end
-  end
 
-  def clear_order_book_caches
-    order_books[:bitstamp] = Hash.new
-    order_books[:weexchange] = Hash.new
+    ensure_we_exchange_trusted_by_wallet we_exchange_wallet do
+      with_trust_line 10_000, :usd
+      with_trust_line 1_000, :btc
+    end
 
-    order_books[:bitstamp][:btc_usd] = Hash.new
-    order_books[:weexchange][:btc_usd] = Hash.new
-  end
-
-  def add_order_to_cache(exchange, currency, order_type, order)
-    order_books[exchange][currency][order_type] << order
-    recompute_exchange_currency_stats_on_order_change(exchange, currency)
-  end
-
-  def remove_order_from_cache(exchange, currency, order_type, order)
-    order_books[exchange][currency][order_type] -= order
-    recompute_exchange_currency_stats_on_order_change(exchange, currency)
-  end
-
-  def best_bid(exchange, currency)
-    best_bid[exchange][currency]
-  end
-
-  def recompute_best_bid(exchange, currency)
-    best_bid[exchange] ||= Hash.new
-    best_bid[exchange][currency] = order_books[exchange][currency][:bids].max_by(&:price)
-  end
-
-  def best_ask(exchange, currency)
-    best_ask[exchange][currency]
-  end
-
-  def recompute_best_ask(exchange, currency)
-    best_ask[exchange] ||= Hash.new
-    best_ask[exchange][currency] = order_books[exchange][currency][:asks].min_by(&:price)
-  end
-
-  def spread(exchange, currency)
-    spread[exchange][currency]
-  end
-
-  def recompute_spread(exchange, currency)
-    spread[exchange] ||= Hash.new
-    spread[exchange][currency] = best_ask(exchange, currency) - best_bid(exchange_currency)
-  end
-
-  def recompute_exchange_stats_on_order_change(exchange, currency)
-    recompute_best_bid(exchange, currency)
-    recompute_best_ask(exchange, currency)
-    recompute_spread(exchange, currency)
   end
 
   ##
-  # Instrument exchange order books
+  # Define our Trading Strategies for Arbitrage
   ##
+  take_liquidity_strategy = Ripple::Trade::Strategy(
+    trade_engine: trade_engine
+  ) do
 
-  bitstamp_btc_usd_order_book.asks.when_created(from_ledger_index: start_ledger_index) do |ask|
-    receive_order(:bitstamp, :btc_usd, :asks, ask)
-  end
+    # If there is an ordering of exchanges such that cross-exchange spread is a positive number
+    # (best bid has exceeded best ask on a cross exchange basis). We make money by selling our
+    # IOUs on the exchange which pays more for them (the exchange with the higher best ask) and
+    # by buying them again on the exchange which asks for less for them (the exchange with the lower best bid)
+    when_cross_exchange_spread_becomes_positive do |best_bid, best_ask|
+      underpriced_exchange = best_bid.exchange
+      overpriced_exchange = best_ask.exchange
 
-  bitstamp_btc_usd_order_book.asks.when_cancelled(from_ledger_index: start_ledger_index) do |ask|
-    cancel_order(:bitstamp, :btc_usd, :asks, ask)
-  end
+      trade_route = Trade::CommonActions::Exchange.compute_order_to_equalize_cross_exchange_price(from: underpriced_exchange, to: overpriced_exchange, via: trade_engine)
+      risk_analysis = Trade::CommonActions::RiskAnalysisSuite.evaluate(route: trade_route, via: trade_engine)
 
-  bitstamp_btc_usd_order_book.bids.when_created(from_ledger_index: start_ledger_index) do |bid|
-    receive_order(:bitstamp, :btc_usd, :bids, bid)
-  end
-
-  bitstamp_btc_usd_order_book.bids.when_cancelled(from_ledger_index: start_ledger_index) do |bid|
-    cancel_order(:bitstamp, :btc_usd, :bids, bid)
-  end
-
-  weexchange_btc_usd_order_book.asks.when_created(from_ledger_index: start_ledger_index) do |ask|
-    receive_order(:weexchange, :btc_usd, :asks, ask)
-  end
-
-  weexchange_btc_usd_order_book.asks.when_cancelled(from_ledger_index: start_ledger_index) do |ask|
-    cancel_order(:weexchange, :btc_usd, :asks, ask)
-  end
-
-  weexchange_btc_usd_order_book.bids.when_created(from_ledger_index: start_ledger_index) do |bid|
-    receive_order(:weexchange, :btc_usd, :bids, bid)
-  end
-
-  weexchange_btc_usd_order_book.bids.when_cancelled(from_ledger_index: start_ledger_index) do |bid|
-    cancel_order(:weexchange, :btc_usd, :bids, bid)
-  end
-
-  # Trading Management
-  def halt_trading!
-    permit_trading = false
-  end
-
-  def resume_trading!
-    permit_trading = true
-  end
-
-  def add_order_to_pending_orders(order)
-    pending_orders << order
-  end
-
-  def remove_order_from_pending_orders(order)
-    pending_orders -= order
-  end
-
-  # @10Hz Check for pending orders and send to Rippled for network submission
-  EM::PeriodicTimer.new(0.1) do
-
-    # don't proceed unless trading is enabled
-    return unless permit_trading
-
-    pending_orders.each do |order|
-
-      # don't process orders which have been committed
-      next unless order.committed?
-
-      # instrument order
-      order.on_failure do |reason|
-        inform_strategies_of_failed_order(order, reason)
-        remove_order_from_pending_orders(order)
-      end
-      order.on_success do |transaction|
-        inform_strategies_of_successful_order(order, transaction)
-        remove_order_from_pending_orders(order)
-      end
-
-      # submit the order to the network via rippled
-      order.commit!
-
+      execute(trade_route) if (trade_route.profitable? && risk_analysis.acceptable?)
     end
 
   end
 
-  # Exchange Order Management
+  make_liquidity_strategy = Ripple::Trade::Strategy(
+    trade_engine: trade_engine
+  ) do
 
-  def receive_order(exchange, currency, order_type, order)
-    add_order_to_cache(exchange, currency, order_type, order)
-    inform_strategies_of_new_offer(exchange, currency, order_type, order)
-  end
+    when_cross_exchange_spread_becomes_negative do |best_bid, best_ask|
+      underpriced_exchange = best_ask.exchange
+      overpriced_exchange = best_bid.exchange
 
-  def cancel_order(exchange, currency, order_type, order)
-    remove_order_from_cache(exchange, currency, order_type, order)
-    inform_strategies_of_cancelled_order(exchange, currency, order_type, order)
-  end
+      trade_route = Trade::CommonAction::Exchange.compute_order_to_equalize_cross_exchange_price(from: underpriced_exchange, to: overpriced_exchange, via: trade_engine)
+      risk_analysis = Trade::CommonActions::RiskAnalysisSuite.evaluate(route: trade_route, via: trade_engine)
 
-  def submit_order(exchange, currency, order_type, order)
-    add_order_to_pending_orders(exchange, currency, order_type, order)
-    order_pending!
-  end
-
-  def cancel_order(exchange, currency, order_type, order)
-    if ripple.order.filled?(order)
-      raise 'unable to cancel filled order'
-    else
-      add_order_to_pending_orders(exchange, currency, :cancellation, ripple.order.create_cancellation_order(order))
-    end
-  end
-
-  # Trading Strategies
-
-  def inform_strategies_of_new_offer(exchange, currency, order_type, order)
-    reevaluate_market!
-  end
-
-  def inform_strategies_of_cancelled_order
-    reevaluate_market!
-  end
-
-  def inform_strategies_of_failed_order(order, reason)
-    reevaluate_market!
-  end
-
-  def inform_strategies_of_successful_order(order, transaction)
-    reevaluate_market!
-  end
-
-  def reevaluate_market!
-    EM.defer do
-      take_bitstamp_liquidity if taking_bitstamp_liquidity_is_possible?
-      take_weexchange_liquidity if taking_weexchange_liquidity_is_possible?
+      execute(trade_route) if (trade_route.profitable? && risk_analysis.acceptable?)
     end
 
-    EM.defer do
-      make_bitstamp_liquidity if making_bitstamp_liquidity_is_possible?
-      make_weexchange_liquidity if making_weexchange_liquidity_is_possible?
-    end
   end
 
-  # Take liquidity
-  def taking_bitstamp_liquidity_is_possible?
-   bitstamp_btc_best_ask = best_ask(:bitstamp, :btc_usd)
-   weexchange_btc_best_ask = best_ask(:weexchange, :btc_usd)
+  ##
+  # This notifies the Strategies that they need to be sure to share status information
+  # with each other so that our strategies don't compete or generate trade loops.
+  ##
+  take_liquidity_strategy.register_collaborator(make_liquidity_strategy)
+  make_liquidity_strategy.register_collaborator(take_liquidity_strategy)
 
-   bitstamp_btc_best_bid = best_bid(:bitstamp, :btc_usd)
-   weexchange_btc_best_bid = best_bid(:weexchange, :btc_usd)
-
-   bitstamp_btc_best_bid > weexchange_btc_best_bid
+  ##
+  # Maintain Wallet Balances when XRP reserves are low in Hot Wallets
+  ##
+  hot_bitstamp_wallet.when_balance_below(500, :xrp) do
+    xrp_reserve_wallet.transfer(to: hot_bitstamp_wallet, amount: 500, currency: :xrp)
+  end
+  hot_we_exchange_wallet.when_balance_below(500, :xrp) do
+    xrp_reserve_wallet.transfer(to: hot_we_exchange_wallet, amount: 500, currency: :xrp)
   end
 
-  def taking_weexchange_liquidity_is_possible?
-    bitstamp_btc_best_ask = best_ask(:bitstamp, :btc_usd)
-    weexchange_btc_best_ask = best_ask(:weexchange, :btc_usd)
-
-    bitstamp_btc_best_bid = best_bid(:bitstamp, :btc_usd)
-    weexchange_btc_best_bid = best_bid(:weexchange, :btc_usd)
-
-    bitstamp_btc_best_bid < weexchange_btc_best_bid
-  end
-
-  def take_bitstamp_liquidity
-    # calculate quantities and prices
-    submit_order(:weexchange ...)
-  end
-
-  def take_weexchange_liquidity
-    ...
-  end
-
-  # Make liquidity
-  ...
+  ##
+  # Begin trading session, but only for logging
+  ##
+  trade_engine.start_trading!
 
 end
 ```
-
-
-Security
---------
-All messages to and from your peer are validated.
