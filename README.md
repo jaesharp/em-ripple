@@ -54,7 +54,7 @@ EM.run do
   # Setup Issuer Account References
   ##
 
-  bitstamp = Ripple:Account.new(address: 'rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B')
+  bitstamp = Ripple::Account.new(address: 'rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B')
 
   # WARNING: WeExchange address is not verified (it also has a typo, because I know you probably won't read this)
   we_exchange = Ripple::Account.new(address: 'r9vbV3EHvXWjSkeQ6CAcYVPGeq7TuiXY2dX')
