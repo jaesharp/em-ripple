@@ -128,7 +128,7 @@ EM.run do
       underpriced_exchange = best_ask.exchange
       overpriced_exchange = best_bid.exchange
 
-      trade_route = Trade::CommonAction::Exchange.compute_order_to_equalize_cross_exchange_price(from: underpriced_exchange, to: overpriced_exchange, via: trade_engine)
+      trade_route = Trade::CommonActions::Exchange.compute_order_to_equalize_cross_exchange_price(from: underpriced_exchange, to: overpriced_exchange, via: trade_engine)
       risk_analysis = Trade::CommonActions::RiskAnalysisSuite.evaluate(route: trade_route, via: trade_engine)
 
       execute(trade_route) if (trade_route.profitable? && risk_analysis.acceptable?)
