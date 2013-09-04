@@ -13,21 +13,22 @@ EM.run do
   # use separate wallets because the ripple network will ripple our IOUs if we trust both issuers in a single
   # wallet
 
+  # Nope. These aren't real passwords mate. You're dreaming.
   xrp_reserve_wallet = Ripple::Wallet.new(
     name: 'quokka',
-    password: "corgegrault9000(yah, nah. This isn't a real password mates.)",
+    password: "corgegrault9000",
     blobvault: 'https://blobvault.payward.com'
   )
 
   hot_bitstamp_wallet = Ripple::Wallet.new(
     name: 'boondaburra',
-    password: "foobar9000(yah, nah. This isn't a real password mates.)",
+    password: "foobar9000",
     blobvault: 'https://blobvault.payward.com'
   )
 
   hot_we_exchange_wallet = Ripple::Wallet.new(
     name: 'kangaroo',
-    password: "bazquux9000(yah, nah. This isn't a real password mates.)",
+    password: "bazquux9000",
     blobvault: 'https://blobvault.payward.com'
   )
 
@@ -60,7 +61,16 @@ EM.run do
       # USDbitstamp/BTCwe_exchange, USDwe_exchange/BTCwe_exchange, BTCbitstamp/BTCwe_exchange, USDBitstamp/XRP, USDwe_exchange/XRP,
       # BTCbitstamp/XRP, BTCwe_exchange/XRP. Not all of these direct exchanges will exist, but we will try to get data for them anyway.
       currencies_of_interest: [:usd, :btc, :xrp]
-  )
+  ) do
+
+    # by default we replenish only when a transaction would fail because the wallet would fall below the reserve
+    # we set this here because we're possibly in a high throughput situation and that could cause us to miss trades
+    # we otherwise would've profited on.
+    replenish_hot_wallet_when_xrp_balance_falls_below do |wallet|
+      1.5 * wallet.account.reserve_requirement
+    end
+
+  end
 
   ##
   # Do things we must do before we begin our automated trading session
@@ -72,12 +82,12 @@ EM.run do
     # Ensure our wallets are set up to trade with our issuers
     ##
 
-    ensure_bitstamp_trusted_by_wallet bitstamp_wallet do
+    ensure_bitstamp_trusted_by_wallet(bitstamp_wallet) do
       with_trust_line 10_000, :usd
       with_trust_line 1_000, :btc
     end
 
-    ensure_we_exchange_trusted_by_wallet we_exchange_wallet do
+    ensure_we_exchange_trusted_by_wallet(we_exchange_wallet) do
       with_trust_line 10_000, :usd
       with_trust_line 1_000, :btc
     end
@@ -124,16 +134,6 @@ EM.run do
       execute(trade_route) if (trade_route.profitable? && risk_analysis.acceptable?)
     end
 
-  end
-
-  ##
-  # Maintain Wallet Balances when XRP reserves are low in hot Wallets
-  ##
-  hot_bitstamp_wallet.when_balance_falls_below(500, :xrp) do
-    xrp_reserve_wallet.transfer(to: hot_bitstamp_wallet, amount: 500, currency: :xrp)
-  end
-  hot_we_exchange_wallet.when_balance_falls_below(500, :xrp) do
-    xrp_reserve_wallet.transfer(to: hot_we_exchange_wallet, amount: 500, currency: :xrp)
   end
 
   ##
