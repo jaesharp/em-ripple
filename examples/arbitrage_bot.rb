@@ -105,8 +105,8 @@ EM.run do
 
     # If there is an ordering of exchanges such that cross-exchange spread is a positive number
     # (best bid has exceeded best ask on a cross exchange basis). We make money by selling our
-    # IOUs on the exchange which pays more for them (the exchange with the higher best ask) and
-    # by buying them again on the exchange which asks for less for them (the exchange with the lower best bid)
+    # IOUs on the exchange which pays more for them (the exchange with the higher best bid) and
+    # by buying them again on the exchange which asks for less for them (the exchange with the lower best ask)
     when_cross_exchange_spread_becomes_positive do |best_bid, best_ask|
       underpriced_exchange = best_bid.exchange
       overpriced_exchange = best_ask.exchange
