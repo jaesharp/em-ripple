@@ -143,13 +143,6 @@ EM.run do
   end
 
   ##
-  # This notifies the Strategies that they need to be sure to share status information
-  # with each other so that our strategies don't compete or generate trade loops.
-  ##
-  take_liquidity_strategy.register_collaborator(make_liquidity_strategy)
-  make_liquidity_strategy.register_collaborator(take_liquidity_strategy)
-
-  ##
   # Maintain Wallet Balances when XRP reserves are low in Hot Wallets
   ##
   hot_bitstamp_wallet.when_balance_below(500, :xrp) do
