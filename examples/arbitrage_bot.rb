@@ -108,10 +108,10 @@ EM.run do
     # IOUs on the exchange which pays more for them (the exchange with the higher best bid) and
     # by buying them again on the exchange which asks for less for them (the exchange with the lower best ask)
     when_cross_exchange_spread_becomes_positive do |best_bid, best_ask|
-      underpriced_exchange = best_bid.exchange
-      overpriced_exchange = best_ask.exchange
+      overpriced_exchange = best_bid.exchange
+      underpriced_exchange = best_ask.exchange
 
-      trade_route = Trade::CommonActions::Exchange.compute_order_to_equalize_cross_exchange_price(from: underpriced_exchange, to: overpriced_exchange, via: trade_engine)
+      trade_route = Trade::CommonActions::Exchange.compute_order_to_equalize_cross_exchange_price(exchanges: [underpriced_exchange, overpriced_exchange], via: trade_engine)
       risk_analysis = Trade::CommonActions::RiskAnalysisSuite.evaluate(route: trade_route, via: trade_engine)
 
       execute(trade_route) if (trade_route.profitable? && risk_analysis.acceptable?)
@@ -120,15 +120,16 @@ EM.run do
   end
 
   # Make Liquidity Strategy
+  # The opposite of the Take Liquidity Strategy
   Ripple::Trade::Strategy(
       trade_engine: trade_engine
   ) do
 
     when_cross_exchange_spread_becomes_negative do |best_bid, best_ask|
-      underpriced_exchange = best_ask.exchange
-      overpriced_exchange = best_bid.exchange
+      underpriced_exchange = best_bid.exchange
+      overpriced_exchange = best_ask.exchange
 
-      trade_route = Trade::CommonActions::Exchange.compute_order_to_equalize_cross_exchange_price(from: underpriced_exchange, to: overpriced_exchange, via: trade_engine)
+      trade_route = Trade::CommonActions::Exchange.compute_order_to_equalize_cross_exchange_price(exchanges: [underpriced_exchange, overpriced_exchange], via: trade_engine)
       risk_analysis = Trade::CommonActions::RiskAnalysisSuite.evaluate(route: trade_route, via: trade_engine)
 
       execute(trade_route) if (trade_route.profitable? && risk_analysis.acceptable?)
