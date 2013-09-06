@@ -99,40 +99,39 @@ EM.run do
   ##
 
   # Take Liquidity Strategy
-  Ripple::Trade::Strategy(
-      trade_engine: trade_engine
-  ) do
+  Ripple::Trade::Strategy(trade_engine: trade_engine) do
 
     # If there is an ordering of exchanges such that cross-exchange spread is a positive number
     # (best bid has exceeded best ask on a cross exchange basis). We make money by selling our
     # IOUs on the exchange which pays more for them (the exchange with the higher best bid) and
     # by buying them again on the exchange which asks for less for them (the exchange with the lower best ask)
-    when_cross_exchange_spread_becomes_positive do |best_bid, best_ask|
-      overpriced_exchange = best_bid.exchange
-      underpriced_exchange = best_ask.exchange
+
+    # Exchange is a notion of issuer/currency pair, it has an orderbook and can be compared -- especially
+    # if issuers are dealing in the same currencies.
+
+    # This is a method_missing method -- format when_{property}_{trigger_specification}_{state}
+    when_cross_exchange_spread_becomes_positive do |overpriced_exchange, underpriced_exchange|
 
       trade_route = Trade::CommonActions::Exchange.compute_order_to_equalize_cross_exchange_price(exchanges: [underpriced_exchange, overpriced_exchange], via: trade_engine)
       risk_analysis = Trade::CommonActions::RiskAnalysisSuite.evaluate(route: trade_route, via: trade_engine)
 
       execute(trade_route) if (trade_route.profitable? && risk_analysis.acceptable?)
+
     end
 
   end
 
   # Make Liquidity Strategy
   # The opposite of the Take Liquidity Strategy
-  Ripple::Trade::Strategy(
-      trade_engine: trade_engine
-  ) do
+  Ripple::Trade::Strategy(trade_engine: trade_engine) do
 
-    when_cross_exchange_spread_becomes_negative do |best_bid, best_ask|
-      underpriced_exchange = best_bid.exchange
-      overpriced_exchange = best_ask.exchange
+    when_cross_exchange_spread_becomes_negative do |underpriced_exchange, overpriced_exchange|
 
       trade_route = Trade::CommonActions::Exchange.compute_order_to_equalize_cross_exchange_price(exchanges: [underpriced_exchange, overpriced_exchange], via: trade_engine)
       risk_analysis = Trade::CommonActions::RiskAnalysisSuite.evaluate(route: trade_route, via: trade_engine)
 
       execute(trade_route) if (trade_route.profitable? && risk_analysis.acceptable?)
+
     end
 
   end
