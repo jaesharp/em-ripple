@@ -1,3 +1,12 @@
+GIT
+  remote: https://github.com/justinlynn/em-websocket-client.git
+  revision: a94dc23aea2f54f85793ea69794cf64ca9db59cd
+  branch: add_connection_callback
+  specs:
+    em-websocket-client (0.1.2)
+      eventmachine
+      websocket
+
 PATH
   remote: .
   specs:
@@ -7,15 +16,8 @@ PATH
 GEM
   remote: https://rubygems.org/
   specs:
-    addressable (2.3.5)
     diff-lcs (1.2.4)
-    em-websocket-client (0.1.1)
-      eventmachine
-      libwebsocket
     eventmachine (1.0.3)
-    libwebsocket (0.1.8)
-      addressable
-      websocket
     rake (10.1.0)
     rspec (2.14.1)
       rspec-core (~> 2.14.0)
@@ -33,6 +35,7 @@ PLATFORMS
 
 DEPENDENCIES
   em-ripple!
+  em-websocket-client!
   rake
   rspec
   yard

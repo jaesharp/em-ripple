@@ -1,8 +1,8 @@
 module EMRipple
-  module Client
+  class Client
     class Peer
 
-      module Transport
+      class Transport
       end
 
     end

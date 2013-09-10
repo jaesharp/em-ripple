@@ -1,16 +1,9 @@
 require 'eventmachine'
-require 'em-websocket-client'
-#require 'em-ripple'
-
-class SWebSocketClient < EventMachine::WebSocketClient
-  def self.connection_completed
-    start_tls
-  end
-end
+require 'em-ripple/ripple/client/peer/transports/secure_web_socket'
 
 EM.run do
 
-  conn = SWebSocketClient.connect("ws://s1.ripple.com:443/")
+  conn = EMRipple::Ripple::Client::Peer::Transports::SecureWebSocket.connect('s1.ripple.com', port: 443)
 
   conn.callback do
     conn.send_msg "{\"command\":\"subscribe\",\"id\":0,\"streams\":[\"ledger\",\"server\",\"transactions\"]}"

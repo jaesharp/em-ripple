@@ -4,7 +4,7 @@ require 'em-ripple'
 EM.run do
 
   # the dry_run option means that the client creates no new transactions
-  ripple_client = Ripple::Client.new(host: 's1.ripple.net', port: 443, dry_run: true)
+  ripple_client = Ripple::Client.connect('s1.ripple.net', port: 443, dry_run: true)
 
   ##
   # Setup wallets
