@@ -13,44 +13,37 @@ module EMRipple
 
             attr_reader :client
 
-            def self.connect(host, port: DEFALUT_WEBSOCKET_PORT, path: '/')
-              client = EventMachine::WebSocketClient.connect(construct_url(host, port, path))
+            def self.connect(host, port: DEFALUT_WEBSOCKET_PORT, path: '/', client: nil)
+              client ||= EventMachine::WebSocketClient.connect(construct_url(host, port, path))
+
               web_socket_transport = new(client)
 
               client.connected do
                 web_socket_transport.connection_completed
               end
 
+              client.callback do
+                web_socket_transport.handshake_completed
+              end
+
+              client.stream do |message|
+                web_socket_transport.raw_response_received(message)
+              end
+
+              client.disconnect do
+                disconnected
+              end
+
               web_socket_transport
             end
 
-            def initialize webSocketClient
+            def initialize(webSocketClient)
+              super
               @client = webSocketClient
             end
 
-            def connection_completed
-            end
-
-            def callback
-              @client.callback do
-                yield
-              end
-            end
-
-            def send_msg(message)
+            def send_raw(message)
               @client.send_msg(message)
-            end
-
-            def disconnect
-              @client.disconnect do
-                yield
-              end
-            end
-
-            def stream &proc
-              @client.stream do |msg|
-                yield msg
-              end
             end
 
             private

@@ -5,26 +5,22 @@ EM.run do
 
   conn = EMRipple::Ripple::Client::Peer::Transports::SecureWebSocket.connect('s1.ripple.com', port: 443)
 
-  conn.callback do
-    conn.send_msg "{\"command\":\"subscribe\",\"id\":0,\"streams\":[\"ledger\",\"server\",\"transactions\"]}"
+  conn.on_handshake_completed do
+    conn.send_command "{\"command\":\"subscribe\",\"id\":54684,\"streams\":[\"ledger\",\"server\",\"transactions\"]}"
   end
 
-  conn.stream do |msg|
-    if msg == 'ping'
-      conn.send_msg "pong"
-      puts "got ping, responded"
-    end
-    puts "<#{msg}>"
+  conn.on_response_received do |issuing_command, response|
+    puts "<#{response}>"
   end
 
-  conn.disconnect do
+  conn.on_disconnect do
     puts "gone"
     EM::stop_event_loop
   end
 
   EM::PeriodicTimer.new(30) do
     puts "pinging"
-    conn.send_msg("{\"command\":\"ping\"}")
+    conn.send_command("{\"command\":\"ping\"}")
   end
 
 end
