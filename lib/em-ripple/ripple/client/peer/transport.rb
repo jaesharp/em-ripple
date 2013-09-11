@@ -1,10 +1,12 @@
 module EMRipple
-  class Client
-    class Peer
+  module Ripple
+    class Client
+      class Peer
 
-      class Transport
+        class Transport
+        end
+
       end
-
     end
   end
 end
