@@ -1,7 +1,7 @@
 GIT
   remote: https://github.com/justinlynn/em-websocket-client.git
-  revision: a94dc23aea2f54f85793ea69794cf64ca9db59cd
-  branch: add_connection_callback
+  revision: 71f508960cee679239cc6d206942069b10804035
+  branch: master
   specs:
     em-websocket-client (0.1.2)
       eventmachine
